@@ -14,7 +14,7 @@ module.exports = {
 
       // check email
       const emailExist = await prisma.user.findUnique({ where: { email } });
-      if (emailExist) throw new Error("Email sudah digunakan");
+      if (emailExist) throw new Error("Email already used");
 
       const hashedPassword = bcrypt.hashSync(password, 10);
 
@@ -50,11 +50,11 @@ module.exports = {
       let { email, password } = payload;
       email = email.toLowerCase(); // set email to lowercase
       const user = await prisma.user.findUnique({ where: { email } });
-      if (!user) throw new Error("User tidak ditemukan");
+      if (!user) throw new Error("User not found");
 
       // validate password
       const passwordCheck = bcrypt.compareSync(password, user.password);
-      if (!passwordCheck) throw new Error("Password salah");
+      if (!passwordCheck) throw new Error("Password invalid");
 
       // generate token
       const jwtSecret = process.env.JWT_SECRET;
@@ -65,6 +65,8 @@ module.exports = {
           expiresIn: 3600,
         }
       );
+      const tokenExp = new Date();
+      tokenExp.setHours(tokenExp.getHours() + 1);
 
       // save user logout time
       await prisma.user.update({
@@ -72,9 +74,13 @@ module.exports = {
         data: {
           logOut: null,
           loginTimes: user.loginTimes + 1,
+          token,
+          tokenExp,
         },
       });
 
+      // create login log
+      await prisma.userLogs.create({ data: { userId: user.id } });
       res.status(200).json({
         status: "success",
         data: { token },
@@ -89,12 +95,12 @@ module.exports = {
       const user = await prisma.user.findUnique({
         where: { id },
       });
-      if (!user) throw new Error("data user tidak ditemukan");
+      if (!user) throw new Error("User not found");
 
       // set logout time
       await prisma.user.update({
         where: { id },
-        data: { logOut: new Date() },
+        data: { logOut: new Date(), token: null, tokenExp: null },
       });
       res.status(200).json({
         status: "success",
@@ -111,9 +117,9 @@ module.exports = {
 
       // check user
       const user = await prisma.user.findUnique({ where: { email } });
-      if (!user) throw new Error("User tidak ditemukan");
+      if (!user) throw new Error("User not found");
 
-      if (otp !== user.otp) throw new Error("Kode otp anda salah");
+      if (otp !== user.otp) throw new Error("Invalid code");
 
       // set email to verified
       await prisma.user.update({
@@ -136,7 +142,7 @@ module.exports = {
       const email = payload.email.toLowerCase();
       const user = await prisma.user.findUnique({ where: { email } });
       if (!user) {
-        throw new Error("Akun tidak ditemukan");
+        throw new Error("User not found");
       }
 
       const characters =
@@ -147,7 +153,7 @@ module.exports = {
       );
 
       const newPassword = passwordArr.join("");
-      const password = bcrypt.hasher(newPassword);
+      const password = bcrypt.hashSync(newPassword);
       await prisma.user.update({ where: { id: user.id }, data: { password } });
 
       await sendEmail(
@@ -170,7 +176,7 @@ module.exports = {
     try {
       const password = payload.password;
       const user = await prisma.user.findUnique({ where: { id: req.userId } });
-      if (!user) throw new Error("User tidak ditemukan");
+      if (!user) throw new Error("User not found");
 
       // update password
       await prisma.user.update({
@@ -195,11 +201,9 @@ module.exports = {
       const payload = await validation.getNewPassword.validateAsync(req.body);
       const email = payload.email.toLowerCase();
       const user = await prisma.user.findUnique({ where: { email } });
-      console.log("🚀 ~ resendOtp: ~ user:", user);
-      if (!user) throw new Error("User tidak ditemukan");
+      if (!user) throw new Error("User not found");
 
       const otp = utils.generateRandomString(4);
-      console.log("🚀 ~ resendOtp: ~ otp:", otp);
       // update password
       await prisma.user.update({
         where: { id: user.id },
